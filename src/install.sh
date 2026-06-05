@@ -741,6 +741,12 @@ install_package tar
 install_package wget
 install_package wget-ssl
 
+# Fedora SELinux Derleme Araçları (Eklenen Bağımlılık)
+if [ "${package_manager}" = "dnf" ]; then
+  install_package checkpolicy
+  install_package policycoreutils-python-utils
+fi
+
 if ! command -v dig &> /dev/null \
   || ! command -v curl &> /dev/null \
   || ! command -v jq &> /dev/null \
@@ -1136,6 +1142,49 @@ if echo "${installation_results}" | grep -iq "could not start zapret service"; t
 fi
 
 echo "${installation_results}" | grep -iq "system is not either systemd" && init_zapret
+
+# =====================================================================
+# FEDORA / RHEL COZUMU: KALICI VE RESMI SELINUX POLITIKASI OLUSTURMA
+# =====================================================================
+if [ "${package_manager}" = "dnf" ] && command -v checkmodule &> /dev/null; then
+  if [ "${country_code}" = "TR" ]; then
+    echo -e "  ${gray}Fedora için SELinux kuralları kalıcı olarak yapılandırılıyor...${reset}"
+  else
+    echo -e "  ${gray}Configuring permanent SELinux policies for Fedora...${reset}"
+  fi
+
+  # 1. Type Enforcement (.te) haritasını dinamik oluştur
+  cat << 'EOF' > /tmp/zapret_systemd.te
+module zapret_systemd 1.0;
+
+require {
+    type init_t;
+    type usr_t;
+    type net_conf_t;
+    class file { execute execute_no_trans open read getattr };
+    class packet_socket { create bind setopt read write };
+    class rawip_socket { create node_bind };
+}
+
+# Systemd (init_t) servisinin /opt/zapret altındaki binary'leri engelsiz çalıştırması ve raw socket açması için izinler
+allow init_t usr_t:file { execute execute_no_trans open read getattr };
+allow init_t self:packet_socket { create bind setopt read write };
+allow init_t self:rawip_socket { create node_bind };
+EOF
+
+  # 2. Modülü derle ve SELinux çekirdeğine enjekte et
+  checkmodule -M -m -o /tmp/zapret_systemd.mod /tmp/zapret_systemd.te &> "${log_redirects}"
+  semodule_package -o /tmp/zapret_systemd.pp -m /tmp/zapret_systemd.mod &> "${log_redirects}"
+  semodule -i /tmp/zapret_systemd.pp &> "${log_redirects}"
+
+  # 3. Geçici derleme dosyalarını temizle
+  rm -f /tmp/zapret_systemd.te /tmp/zapret_systemd.mod /tmp/zapret_systemd.pp
+
+  # 4. /opt/zapret altındaki tüm hiyerarşiyi SELinux fcontext veri tabanına kalıcı kaydet ve bağlamı yenile
+  semanage fcontext -a -t usr_t "/opt/zapret(/.*)?" &> "${log_redirects}"
+  restorecon -R /opt/zapret &> "${log_redirects}"
+fi
+# =====================================================================
 
 enable_service zapret
 start_service zapret
