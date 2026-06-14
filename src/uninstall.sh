@@ -451,7 +451,7 @@ if [ "${EUID}" -ne 0 ]; then
 
   echo ""
 
-  echo -e "  ${green}curl ${white}-${yellow}fsSL ${cyan}https://raw.github.com/keift/zapret/refs/heads/main/src/uninstall.sh ${gray}| ${green}sudo ${cyan}bash${reset}"
+  echo -e "  ${green}curl ${white}-${yellow}fsSL ${cyan}https://raw.githubusercontent.com/xmtaha/zapret-fedora-selinux/refs/heads/main/src/uninstall.sh ${gray}| ${green}sudo ${cyan}bash${reset}"
 
   echo ""
 
@@ -523,6 +523,28 @@ elif [ "${country_code}" = "TR" ]; then
 else
   echo -e "  ${gray}Uninstalling Zapret...${reset}"
 fi
+
+# =====================================================================
+# FEDORA / RHEL COZUMU: KALICI VE RESMI SELINUX POLITIKASINI KALDIRMA
+# =====================================================================
+if [ "${package_manager}" = "dnf" ]; then
+  if [ "${country_code}" = "TR" ]; then
+    echo -e "  ${gray}Fedora için SELinux kuralları kaldırılıyor...${reset}"
+  else
+    echo -e "  ${gray}Removing SELinux policies for Fedora...${reset}"
+  fi
+
+  # 1. SELinux modülünü kaldır
+  if command -v semodule &> /dev/null; then
+    semodule -r zapret_systemd &> "${log_redirects}"
+  fi
+
+  # 2. /opt/zapret altındaki hiyerarşiyi SELinux fcontext veri tabanından sil
+  if command -v semanage &> /dev/null; then
+    semanage fcontext -d "/opt/zapret(/.*)?" &> "${log_redirects}"
+  fi
+fi
+# =====================================================================
 
 echo -e "Y\n\n" | /opt/zapret/uninstall_easy.sh &> "${log_redirects}"
 rm -rf /opt/zapret &> "${log_redirects}"
